@@ -36,11 +36,11 @@ rcp85_seq = list(range(1,19,2))
 lat and lon location indices for each subgrid within a single grid
 
 '''
-lat_lon = list(combinations_with_replacement([0,1], 2)) 
+LatLon = list(combinations_with_replacement([0,1], 2)) 
 
-tp = tp = tuple(reversed(ls[1])) 
+tp = tuple(reversed(LatLon[1])) 
 
-lat_lon.append(tp)
+LatLon.append(tp)
 
 #Emty pandas dataframe
 grid = pd.DataFrame()
@@ -52,7 +52,7 @@ gridAll = pd.DataFrame()
 currentDirectory = pathlib.Path('.')
 
 # Call all netcdf files only
-currentPattern = "*.nc"
+fileType = "*.nc"
 
 for currentFile in currentDirectory.glob(currentPattern):
 
@@ -60,34 +60,45 @@ for currentFile in currentDirectory.glob(currentPattern):
 
 	file_name = os.path.basename(currentFile)
 
+	print(file_name)
+
 	gridname = os.path.splitext(file_name)[0]
 
 	nc = Dataset(currentFile, 'r', format = 'NETCDF3_CLASSIC')
 
-	nc.variables.keys()
+	#nc.variables.keys() # to check attributes
 
-	nc.variables['pr'].dimensions 
+	#nc.variables['pr'].dimensions # indicate dimensions in the precipitation (pr) vaiable
 
 	lat = nc.variables['lat'][:]
+
+	print(lat)
 	
 	lon = nc.variables['lon'][:]
 	
-	precip = nc.variables['pr'][:]
+	print(lon)
+	
+	precip = nc.variables['pr'][:] 
 
 '''Each grid has 4 subgrids. The data for each subgrid can be extracted using lat/lon location of that subgrid.
 
 '''
 
-	 for i in range(0,len(lat_lon)):
-        df = pd.DataFrame(precip[0:precip.shape[0], 0:precip.shape[1], lat_lon[i][0], lat_lon[i][1]])
+	for i in range(0,len(LatLon)):
+		print(lat_lon[i][0], lat_lon[i][1])
+		df = pd.DataFrame(precip[0:precip.shape[0], 0:precip.shape[1], LatLon[i][0], LatLon[i][1]])
         subgrid = df.transpose()
         subgrid = subgrid.loc[:, subgrid.columns.isin(rcp85_seq)]
         subgrid.columns = ['Model1', 'Model2', 'Model3', 'Model4', 'Model5', 'Model6', 'Model7', 'Model8', 'Model9']
+        subgrid['ModelEnsemble'] = subgrid.mean(axis = 1)
         subgrid['date']= pd.date_range(start='1950-01-01', end='2100-01-01', closed='left')
+        #subgrid.groupby('date').mean()
         subgrid['latlon'] = np.repeat(str(lat_lon[i]),precip.shape[1])
         subgrid['SubgridName'] = np.repeat('SubGrid' + '' + str(i), precip.shape[1])
         subgrid['gridName'] = np.repeat(gridname, precip.shape[1])
         grid = grid.append(subgrid, ignore_index = False)
+
+    
 
 '''
 
@@ -95,17 +106,38 @@ repeat same for each netcdf file and append to a new pandas dataframe
 
 '''
 
-	gridAll = gridAll.append(grid, ignore_index = False)
+gridAll = gridAll.append(grid, ignore_index = False)
 
 #Make new working copy of the pandas dataframe
-gridWorking = gridAll.copy()
+#gridWorking = gridAll.copy()
 
-gridWorking = gridWorking[gridWorking.columns[0:10]]
+gridWorking = gridAll[gridAll.columns[0:11]]
 
 loca = gridWorking.groupby('date').mean()
 
 loca.reset_index(inplace= True)
 
-#write to csv
+loca.to_csv('loca_4252019.csv', sep=',', encoding='utf-8', index =False)
 
-loca.to_csv('loca.csv', sep=',', encoding='utf-8', index =False)
+#Addition - later added
+
+#Replace values < 0.01 as 0. PHL RG only records rainfall > 0.01 inches
+
+path='D:\\CCAP\\LOCA'
+os.chdir(path)
+
+loca = pd.read_csv('loca_4252019.csv')
+
+loca_model = loca.drop(['date'], axis = 1)
+
+loca_model.applymap(lambda x: 0 if x > 0.0 & x < 0.254 else x) # 0.01 inches = 0.254 mm
+
+loca_model.insert(loc = 0, column = 'date', value = loca['date'])
+
+loca_model.to_csv('loca_filtered4252019.csv', sep=',', encoding='utf-8', index =False)
+
+#Get stats
+
+loca_model['year'] = pd.DatetimeIndex(loca_model['date']).year
+
+
